@@ -1,4 +1,10 @@
 <resources>
     <string name="app_name">Master_Project</string>
     <string name="take_picture">Take picture</string>
+    <string name = "twitter_consumer_key">gOJhc1MXl0yWYBQwenukpVZ8b</string>
+    <string name= "twitter_consumer_secret"> srX00rGNh9HFhTAg0wgt7H9qwBQwvT4mlaVrRa2ww7kWbMw43e</string>
+    <string name="please_wait_title">Please wait</string>
+    <string name="authenticating_your_app_message">Authenticating your App Message</string>
+    <string name="posting_image_message">Posting Image</string>
+    <string name="image_posted_on_twitter">Image posted on Twitter</string>
 </resources>

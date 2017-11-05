@@ -1,7 +1,9 @@
 package com.example.nana.master_project;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
@@ -30,6 +32,7 @@ import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
 import android.widget.Button;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
@@ -45,6 +48,16 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 
+import twitter4j.StatusUpdate;
+import twitter4j.Twitter;
+import twitter4j.TwitterException;
+import twitter4j.TwitterFactory;
+import twitter4j.auth.AccessToken;
+import twitter4j.auth.OAuthAuthorization;
+import twitter4j.conf.Configuration;
+import twitter4j.conf.ConfigurationBuilder;
+
+import static android.R.id.message;
 import static java.text.DateFormat.getDateInstance;
 
 public class MainActivity extends AppCompatActivity {
@@ -75,6 +88,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean mFlashSupported;
     private Handler mBackgroundHandler;
     private HandlerThread mBackgroundThread;
+    private AlertDialog mAlertBuilder;
 
 
     @Override
@@ -160,6 +174,7 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
+        final File file = new File(Environment.getExternalStorageDirectory()+"/app-image" + new SimpleDateFormat("yyyy-MM-dd_HH:mm:ss").format(new Date()) + ".jpg");
         try {
             CameraCharacteristics characteristics = manager.getCameraCharacteristics(cameraDevice.getId());
             Size[] jpegSizes = null;
@@ -182,7 +197,7 @@ public class MainActivity extends AppCompatActivity {
             // Orientation
             int rotation = getWindowManager().getDefaultDisplay().getRotation();
             captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, ORIENTATIONS.get(rotation));
-            final File file = new File(Environment.getExternalStorageDirectory()+"/app-image" + new SimpleDateFormat("yyyy-MM-dd_HH:mm:ss").format(new Date()) + ".jpg");
+            //file = new File(Environment.getExternalStorageDirectory()+"/app-image" + new SimpleDateFormat("yyyy-MM-dd_HH:mm:ss").format(new Date()) + ".jpg");
             ImageReader.OnImageAvailableListener readerListener = new ImageReader.OnImageAvailableListener() {
                 @Override
                 public void onImageAvailable(ImageReader reader) {
@@ -205,6 +220,7 @@ public class MainActivity extends AppCompatActivity {
                 }
                 private void save(byte[] bytes) throws IOException {
                     OutputStream output = null;
+
                     try {
                         output = new FileOutputStream(file);
                         output.write(bytes);
@@ -212,6 +228,30 @@ public class MainActivity extends AppCompatActivity {
                         if (null != output) {
                             output.close();
                         }
+                    }
+
+                    //save also to twitter
+                    if (LoginActivity.isActive(MainActivity.this)) {
+
+                        mAlertBuilder = new AlertDialog.Builder(MainActivity.this).create();
+                        mAlertBuilder.setCancelable(false);
+                        mAlertBuilder.setTitle(R.string.please_wait_title);
+                        View view = getLayoutInflater().inflate(R.layout.view_loading, null);
+                        ((TextView) view.findViewById(R.id.messageTextViewFromLoading)).setText(getString(R.string.posting_image_message));
+                        mAlertBuilder.setView(view);
+                        mAlertBuilder.show();
+
+                        uploadToTwitter(file, "uploaded via Fake News Authentication App", new TwitterCallback() {
+
+                            @Override
+                            public void onFinsihed(Boolean response) {
+                                mAlertBuilder.dismiss();
+                                Log.d(TAG, "----------------response----------------" + response);
+                                Toast.makeText(MainActivity.this, getString(R.string.image_posted_on_twitter), Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                    } else{
+                        startActivity(new Intent(MainActivity.this, LoginActivity.class));
                     }
                 }
             };
@@ -221,6 +261,7 @@ public class MainActivity extends AppCompatActivity {
                 public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
                     super.onCaptureCompleted(session, request, result);
                     Toast.makeText(MainActivity.this, "Saved:" + file, Toast.LENGTH_SHORT).show();
+                    Log.d(TAG, "Saved: " + file.getName());
                     createCameraPreview();
                 }
             };
@@ -239,6 +280,29 @@ public class MainActivity extends AppCompatActivity {
             }, mBackgroundHandler);
         } catch (CameraAccessException e) {
             e.printStackTrace();
+        }
+
+        if (LoginActivity.isActive(this)) {
+
+            mAlertBuilder = new AlertDialog.Builder(this).create();
+            mAlertBuilder.setCancelable(false);
+            mAlertBuilder.setTitle(R.string.please_wait_title);
+            View view = getLayoutInflater().inflate(R.layout.view_loading, null);
+            ((TextView) view.findViewById(R.id.messageTextViewFromLoading)).setText(getString(R.string.posting_image_message));
+            mAlertBuilder.setView(view);
+            mAlertBuilder.show();
+
+            uploadToTwitter(file, "uploaded via Fake News Authentication App", new TwitterCallback() {
+
+                @Override
+                public void onFinsihed(Boolean response) {
+                    mAlertBuilder.dismiss();
+                    Log.d(TAG, "----------------response----------------" + response);
+                    Toast.makeText(MainActivity.this, getString(R.string.image_posted_on_twitter), Toast.LENGTH_SHORT).show();
+                }
+            });
+        } else{
+            startActivity(new Intent(this, LoginActivity.class));
         }
     }
     protected void createCameraPreview() {
@@ -337,5 +401,69 @@ public class MainActivity extends AppCompatActivity {
         //closeCamera();
         stopBackgroundThread();
         super.onPause();
+    }
+
+    private void uploadToTwitter(final File file, final String message, final TwitterCallback postResponse){
+
+        if(!LoginActivity.isActive(this)){
+            Log.d(TAG, "LoginActivity not Active");
+            postResponse.onFinsihed(false);
+            return;
+        }
+
+        ConfigurationBuilder configurationBuilder = new ConfigurationBuilder();
+
+        configurationBuilder.setDebugEnabled(true);
+
+        configurationBuilder.setOAuthConsumerKey(this.getResources().getString(R.string.twitter_consumer_key));
+
+        configurationBuilder.setOAuthConsumerSecret(this.getResources().getString(R.string.twitter_consumer_secret));
+
+        configurationBuilder.setOAuthAccessToken(LoginActivity.getAccessToken((this)));
+
+        configurationBuilder.setOAuthAccessTokenSecret(LoginActivity.getAccessTokenSecret(this));
+
+        Configuration configuration = configurationBuilder.build();
+
+        final Twitter twitter = new TwitterFactory(configuration).getInstance();
+
+        new Thread(new Runnable() {
+
+            @Override
+            public void run() {
+                boolean success = true;
+                Log.d(TAG, file.exists() + "");
+                try {
+                    if (file.exists()) {
+                        StatusUpdate status = new StatusUpdate(message);
+                        status.setMedia(file);
+                        twitter.updateStatus(status);
+                    }else{
+                        Log.d(TAG, "----- Invalid File ----------");
+                        success = false;
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    Log.d(TAG, "success = false");
+                    success = false;
+                }
+
+
+
+                final boolean finalSuccess = success;
+
+                MainActivity.this.runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        postResponse.onFinsihed(finalSuccess);
+                    }
+                });
+
+            }
+        }).start();
+    }
+
+    public static abstract class TwitterCallback{
+        public abstract void onFinsihed(Boolean success);
     }
 }
